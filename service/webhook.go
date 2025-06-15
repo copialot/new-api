@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"one-api/dto"
 	"one-api/setting"
 	"time"
@@ -46,6 +47,7 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 		Timestamp: time.Now().Unix(),
 	}
 
+	payloadText := data.Title + "\n" + content
 	// 序列化负载
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -59,7 +61,7 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 	if setting.EnableWorker() {
 		// 构建worker请求数据
 		workerReq := &WorkerRequest{
-			URL:    webhookURL,
+			URL:    webhookURL + "&text=" + url.QueryEscape(payloadText),
 			Key:    setting.WorkerValidKey,
 			Method: http.MethodPost,
 			Headers: map[string]string{
@@ -86,7 +88,7 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 			return fmt.Errorf("webhook request failed with status code: %d", resp.StatusCode)
 		}
 	} else {
-		req, err = http.NewRequest(http.MethodPost, webhookURL, bytes.NewBuffer(payloadBytes))
+		req, err = http.NewRequest(http.MethodPost, webhookURL+"&text="+url.QueryEscape(payloadText), bytes.NewBuffer(payloadBytes))
 		if err != nil {
 			return fmt.Errorf("failed to create webhook request: %v", err)
 		}

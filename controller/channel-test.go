@@ -66,9 +66,10 @@ func testChannel(channel *model.Channel, testModel string) (err error, openAIErr
 			testModel = *channel.TestModel
 		} else {
 			if len(channel.GetModels()) > 0 {
-				testModel = channel.GetModels()[0]
+				// testModel = channel.GetModels()[0]
+				testModel = "gpt-4o"
 			} else {
-				testModel = "gpt-4o-mini"
+				testModel = "gpt-4o"
 			}
 		}
 	}
@@ -170,6 +171,7 @@ func testChannel(channel *model.Channel, testModel string) (err error, openAIErr
 	model.RecordConsumeLog(c, 1, channel.Id, usage.PromptTokens, usage.CompletionTokens, info.OriginModelName, "模型测试",
 		quota, "模型测试", 0, quota, int(consumedTime), false, info.Group, other)
 	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
+	service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
 	return nil, nil
 }
 
@@ -278,6 +280,8 @@ func testAllChannels(notify bool) error {
 			testAllChannelsLock.Unlock()
 		}()
 
+		var newDisabledCount = 0
+		var newEnabledCount = 0
 		for _, channel := range channels {
 			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 			tik := time.Now()
@@ -301,20 +305,22 @@ func testAllChannels(notify bool) error {
 
 			// disable channel
 			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
+				newDisabledCount += 1
 				service.DisableChannel(channel.Id, channel.Name, err.Error())
 			}
 
 			// enable channel
 			if !isChannelEnabled && service.ShouldEnableChannel(err, openaiWithStatusErr, channel.Status) {
+				newEnabledCount += 1
 				service.EnableChannel(channel.Id, channel.Name)
 			}
 
 			channel.UpdateResponseTime(milliseconds)
 			time.Sleep(common.RequestInterval)
 		}
-		
+
 		if notify {
-			service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
+			service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成，新禁用数量 "+strconv.Itoa(newDisabledCount)+", 新启用数量 "+strconv.Itoa(newEnabledCount))
 		}
 	})
 	return nil
@@ -340,7 +346,7 @@ func AutomaticallyTestChannels(frequency int) {
 	for {
 		time.Sleep(time.Duration(frequency) * time.Minute)
 		common.SysLog("testing all channels")
-		_ = testAllChannels(false)
+		_ = testAllChannels(true)
 		common.SysLog("channel test finished")
 	}
 }
